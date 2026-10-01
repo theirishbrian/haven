@@ -377,3 +377,14 @@ def test_audit_log_records_counts_but_no_content(client: TestClient, db_path: Pa
     raw = db_path.read_bytes()
     for secret in [*SECRETS, "[PERSON_1]", "sertraline"]:
         assert secret.encode() not in raw, f"{secret!r} found in audit database"
+
+
+def test_restore_can_be_switched_off(client: TestClient) -> None:
+    r = client.post(
+        "/v1/chat/completions",
+        headers={"x-haven-restore": "false"},
+        json={"model": "gpt-4o", "messages": [{"role": "user", "content": "Note for John Smith"}]},
+    )
+    reply = r.json()["choices"][0]["message"]["content"]
+    assert "[PERSON_1]" in reply
+    assert "John Smith" not in reply

@@ -35,6 +35,39 @@ No automated scrubber catches everything. Names that are also ordinary words, un
 
 If you find something that gets through, please report it privately (see [SECURITY.md](SECURITY.md)).
 
+## Running it with Docker
+
+This is the easiest way, and you don't need Python installed.
+
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and start it.
+2. Download Haven and add your keys:
+
+   ```bash
+   git clone https://github.com/theirishbrian/haven
+   cd haven
+   cp .env.example .env
+   ```
+
+   On Windows PowerShell, use `copy .env.example .env` for the last line. Open `.env` in any text editor and paste in your OpenAI key, your Anthropic key, or both.
+
+3. Start Haven:
+
+   ```bash
+   docker compose up -d
+   ```
+
+   The first build downloads about 1 GB (mostly the language model) and takes a few minutes. After that it starts in seconds.
+
+4. Check it works against your real accounts:
+
+   ```bash
+   docker compose exec haven python scripts/live_check.py
+   ```
+
+   This sends a made-up clinical note through Haven, shows you exactly what OpenAI and Anthropic received (tokens only), then shows the reply with the details put back. It costs a fraction of a cent.
+
+Haven is only reachable from your own computer. Your audit log is kept in a Docker volume, so it survives restarts. To stop Haven, run `docker compose down`.
+
 ## Running it (development)
 
 Python 3.11 or later.
@@ -66,6 +99,8 @@ client = Anthropic(base_url="http://127.0.0.1:8787")
 
 Put your API keys in Haven's `.env` file, or keep sending them from your app as usual. Haven forwards them.
 
+To see a reply exactly as the provider wrote it, tokens and all, send the header `x-haven-restore: false`.
+
 ### Streaming
 
 If your app asks for a streamed reply, Haven waits for the whole answer, restores the real names, then sends it back in streaming format. The reply arrives in one go rather than word by word. This is deliberate: it means a token like `[PERSON_1]` can never be split across two pieces and slip through unrestored.
@@ -85,7 +120,7 @@ Every request adds one row to a local SQLite file (`haven_audit.db`): the time, 
 - [x] Audit log of counts only, never content
 - [ ] Tested against live OpenAI and Anthropic accounts
 - [ ] Word-by-word streaming
-- [ ] Docker image
+- [x] Docker image
 - [ ] Published accuracy figures on a synthetic test set
 
 ## Licence

@@ -154,7 +154,12 @@ async def _proxy(
         await _record(request, event(502))
         return _error(502, f"{PROVIDER_NAMES[provider]} returned a response Haven could not read.", provider)
 
-    restored = restore(data, scrubber.token_map)
+    # "x-haven-restore: false" returns the reply exactly as the provider wrote it,
+    # tokens and all. Useful for checking what the provider actually saw.
+    if request.headers.get("x-haven-restore", "").lower() == "false":
+        restored = data
+    else:
+        restored = restore(data, scrubber.token_map)
     await _record(request, event(200, data))
 
     if stream:

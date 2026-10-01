@@ -25,3 +25,37 @@ jobs:
         run: ruff format --check --diff .
       - name: Test
         run: pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build image
+        run: docker compose build
+      - name: Start Haven
+        # Upstream points at a closed port, so no real provider is ever called.
+        run: |
+          echo "OPENAI_API_KEY=sk-ci-dummy" > .env
+          echo "HAVEN_OPENAI_BASE_URL=http://127.0.0.1:9" >> .env
+          docker compose up -d
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8787/health && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8787/health
+      - name: Check the container scrubs and audits
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8787/v1/chat/completions \
+            -H 'content-type: application/json' \
+            -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"John Smith, DOB 04/12/1982"}]}')
+          echo "status $code"
+          test "$code" = "502"
+          curl -s http://127.0.0.1:8787/haven/audit | tee audit.json
+          python3 -c "import json; r=json.load(open('audit.json'))[0]; assert r['entity_counts'].get('PERSON')==1, r; assert r['entity_counts'].get('DATE')==1, r"
+          docker compose exec -T haven sh -c "test -s /data/haven_audit.db"
+          ! docker compose exec -T haven sh -c "grep -a 'John Smith' /data/haven_audit.db"
+      - name: Container runs as non-root
+        run: test "$(docker compose exec -T haven id -u)" = "10001"
+      - name: Logs
+        if: always()
+        run: docker compose logs

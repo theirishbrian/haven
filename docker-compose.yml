@@ -1,0 +1,23 @@
+services:
+  haven:
+    build: .
+    image: haven:local
+    container_name: haven
+    restart: unless-stopped
+    # Reads API keys and settings from .env (copy .env.example to start).
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Docker needs Haven listening on all interfaces inside the container.
+      HAVEN_HOST: 0.0.0.0
+      HAVEN_AUDIT_DB_PATH: /data/haven_audit.db
+    ports:
+      # 127.0.0.1 means only this computer can reach Haven, not your network.
+      - "127.0.0.1:8787:8787"
+    volumes:
+      # Keeps the audit log when the container is rebuilt or restarted.
+      - haven-data:/data
+
+volumes:
+  haven-data:
