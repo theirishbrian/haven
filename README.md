@@ -4,7 +4,7 @@ Haven is a small proxy that runs on your own machine and strips patient and clie
 
 A therapist types "Summarise today's session with John Smith, DOB 04/12/1982". The AI provider receives "Summarise today's session with [PERSON_1], DOB [DATE_1]". When the reply comes back, Haven puts John Smith's name back in. The original details stay in memory on your machine for that one request and are never written to disk.
 
-> **Status: early development.** The scrubbing engine, both proxy endpoints and the audit log work and are tested against a simulated provider. They haven't been tested against live OpenAI or Anthropic accounts yet. Don't use this with real patient data yet.
+> **Status: early development.** The scrubbing engine, both proxy endpoints and the audit log work and are tested against a simulated provider. They have passed a live test against Anthropic's API but not yet OpenAI's. Don't use this with real patient data yet.
 
 ## What it catches
 
@@ -118,7 +118,8 @@ Every request adds one row to a local SQLite file (`haven_audit.db`): the time, 
 - [x] `/v1/chat/completions` (OpenAI format) and `/v1/messages` (Anthropic format)
 - [x] Buffered streaming
 - [x] Audit log of counts only, never content
-- [ ] Tested against live OpenAI and Anthropic accounts
+- [x] Tested against a live Anthropic account
+- [ ] Tested against a live OpenAI account
 - [ ] Word-by-word streaming
 - [x] Docker image
 - [ ] Published accuracy figures on a synthetic test set
