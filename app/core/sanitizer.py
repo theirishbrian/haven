@@ -70,6 +70,19 @@ REGION_ENTITIES: dict[str, list[str]] = {
     "us": ["US_SSN", "MEDICAL_LICENSE", "US_DRIVER_LICENSE", "US_PASSPORT", "US_ITIN", "US_BANK_NUMBER"],
     "eu": ["IBAN_CODE", "UK_NHS", "IE_PPSN"],
 }
+# spaCy labels Haven has no use for. Ignoring them also silences Presidio's warnings.
+SPACY_LABELS_TO_IGNORE = [
+    "CARDINAL",
+    "ORDINAL",
+    "QUANTITY",
+    "PERCENT",
+    "MONEY",
+    "PRODUCT",
+    "EVENT",
+    "WORK_OF_ART",
+    "LAW",
+    "LANGUAGE",
+]
 PHONE_REGIONS = ("US", "CA", "GB", "IE", "DE", "FR", "ES", "IT", "NL")
 
 _MONTH = (
@@ -152,6 +165,7 @@ class Sanitiser:
             nlp_configuration={
                 "nlp_engine_name": "spacy",
                 "models": [{"lang_code": "en", "model_name": spacy_model}],
+                "ner_model_configuration": {"labels_to_ignore": SPACY_LABELS_TO_IGNORE},
             }
         ).create_engine()
         registry = RecognizerRegistry()

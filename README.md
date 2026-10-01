@@ -4,7 +4,7 @@ Haven is a small proxy that runs on your own machine and strips patient and clie
 
 A therapist types "Summarise today's session with John Smith, DOB 04/12/1982". The AI provider receives "Summarise today's session with [PERSON_1], DOB [DATE_1]". When the reply comes back, Haven puts John Smith's name back in. The original details stay in memory on your machine for that one request and are never written to disk.
 
-> **Status: early development.** The scrubbing engine works and is tested. The proxy endpoints, audit log and Docker image are being built now. Don't use this with real patient data yet.
+> **Status: early development.** The scrubbing engine, both proxy endpoints and the audit log work and are tested against a simulated provider. They haven't been tested against live OpenAI or Anthropic accounts yet. Don't use this with real patient data yet.
 
 ## What it catches
 
@@ -48,12 +48,43 @@ cp .env.example .env   # add your API keys
 pytest
 ```
 
+## Pointing your app at Haven
+
+Start Haven with `python -m app`. It listens on `http://127.0.0.1:8787` and only accepts connections from your own machine.
+
+Anything that talks to OpenAI or Anthropic can use Haven by changing one setting, the base URL.
+
+```python
+# OpenAI
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:8787/v1")
+
+# Anthropic
+from anthropic import Anthropic
+client = Anthropic(base_url="http://127.0.0.1:8787")
+```
+
+Put your API keys in Haven's `.env` file, or keep sending them from your app as usual. Haven forwards them.
+
+### Streaming
+
+If your app asks for a streamed reply, Haven waits for the whole answer, restores the real names, then sends it back in streaming format. The reply arrives in one go rather than word by word. This is deliberate: it means a token like `[PERSON_1]` can never be split across two pieces and slip through unrestored.
+
+## The audit log
+
+Every request adds one row to a local SQLite file (`haven_audit.db`): the time, provider, model, token counts and how many of each kind of identifier were removed, e.g. "2 PERSON, 1 DATE". It never stores prompt text, replies or the original values. The test suite reads the raw database file and fails if any patient detail is in it.
+
+- `GET /haven/audit` shows the latest rows as JSON
+- `GET /haven/audit.csv` downloads the whole log
+
 ## Roadmap
 
 - [x] Scrubbing engine with US and EU packs
-- [ ] `/v1/chat/completions` (OpenAI format) and `/v1/messages` (Anthropic format)
-- [ ] Streaming support (buffered first, word by word later)
-- [ ] Audit log of counts only, never content
+- [x] `/v1/chat/completions` (OpenAI format) and `/v1/messages` (Anthropic format)
+- [x] Buffered streaming
+- [x] Audit log of counts only, never content
+- [ ] Tested against live OpenAI and Anthropic accounts
+- [ ] Word-by-word streaming
 - [ ] Docker image
 - [ ] Published accuracy figures on a synthetic test set
 
