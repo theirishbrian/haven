@@ -9,8 +9,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -20,6 +20,8 @@ jobs:
           pip install -r requirements-dev.txt
           python -m spacy download en_core_web_lg
       - name: Lint
-        run: ruff check . && ruff format --check .
+        run: ruff check --output-format=github .
+      - name: Format
+        run: ruff format --check --diff .
       - name: Test
         run: pytest -q
