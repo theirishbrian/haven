@@ -1,9 +1,17 @@
 name: Release
 
-# Runs when a version tag such as v0.1.0 is pushed.
+# Two ways to release:
+#   1. Push a tag such as v0.1.0.
+#   2. Actions tab > Release > Run workflow, and type the version (e.g. 0.1.0).
+#      The workflow creates the tag for you.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the v (e.g. 0.1.0). Must match app/__init__.py."
+        required: true
 
 permissions:
   contents: write  # create the GitHub release
@@ -11,6 +19,8 @@ permissions:
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/haven
+  # Tag for this release, whichever way it was started.
+  TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
 
 jobs:
   test:
@@ -25,8 +35,8 @@ jobs:
       - name: Check the tag matches the version in the code
         run: |
           code_version=$(python -c "import app; print(app.__version__)")
-          test "v${code_version}" = "${GITHUB_REF_NAME}" || {
-            echo "Tag ${GITHUB_REF_NAME} does not match app.__version__ ${code_version}"; exit 1; }
+          test "v${code_version}" = "${TAG}" || {
+            echo "Tag ${TAG} does not match app.__version__ ${code_version}"; exit 1; }
       - run: |
           pip install -r requirements-dev.txt
           python -m spacy download en_core_web_lg
@@ -48,7 +58,7 @@ jobs:
       - name: Work out tags
         id: tags
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
       - name: Build and push (Intel/AMD and ARM)
@@ -78,9 +88,9 @@ jobs:
           docker login ghcr.io -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}"
           docker run -d --name haven -p 127.0.0.1:8787:8787 \
             -e OPENAI_API_KEY=sk-dummy -e HAVEN_OPENAI_BASE_URL=http://127.0.0.1:9 \
-            "${IMAGE}:${GITHUB_REF_NAME#v}"
+            "${IMAGE}:${TAG#v}"
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8787/health && break; sleep 2; done
-          curl -sf http://127.0.0.1:8787/health | grep -q "\"version\":\"${GITHUB_REF_NAME#v}\""
+          curl -sf http://127.0.0.1:8787/health | grep -q "\"version\":\"${TAG#v}\""
           code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8787/v1/chat/completions \
             -H 'content-type: application/json' \
             -d '{"model":"x","messages":[{"role":"user","content":"Siobhán Kavanagh, DOB 04/12/1982"}]}')
@@ -96,7 +106,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           # Take this version's section of CHANGELOG.md as the release notes.
           awk -v v="$version" '
             $0 ~ "^## "v { found=1; next }
@@ -113,4 +123,6 @@ jobs:
           EOF
           prerelease=""
           case "$version" in 0.*) prerelease="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" --title "Haven ${version}" --notes-file notes.md $prerelease
+          # --target creates the tag on this commit if it doesn't exist yet (manual runs).
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "Haven ${version}" \
+            --notes-file notes.md $prerelease
