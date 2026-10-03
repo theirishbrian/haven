@@ -4,7 +4,7 @@ Haven is a small proxy that runs on your own machine and strips patient and clie
 
 A therapist types "Summarise today's session with John Smith, DOB 04/12/1982". The AI provider receives "Summarise today's session with [PERSON_1], DOB [DATE_1]". When the reply comes back, Haven puts John Smith's name back in. The original details stay in memory on your machine for that one request and are never written to disk.
 
-> **Status: early development.** The scrubbing engine, both proxy endpoints and the audit log work and are tested against a simulated provider. They have passed a live test against Anthropic's API but not yet OpenAI's. Don't use this with real patient data yet.
+> **Status: pre-release (0.1.0).** The scrubbing engine, both proxy endpoints and the audit log work and are tested against a simulated provider. They have passed a live test against Anthropic's API but not yet OpenAI's. Don't use this with real patient data yet.
 
 ## What it catches
 
@@ -52,9 +52,24 @@ No automated scrubber catches everything. Names that are also ordinary words, un
 
 If you find something that gets through, please report it privately (see [SECURITY.md](SECURITY.md)).
 
-## Running it with Docker
+## Quick start
 
-This is the easiest way, and you don't need Python installed.
+You need [Docker Desktop](https://www.docker.com/products/docker-desktop/) running. Then one command downloads and starts Haven:
+
+```bash
+docker run -d --name haven --restart unless-stopped \
+  -p 127.0.0.1:8787:8787 -v haven-data:/data \
+  -e ANTHROPIC_API_KEY=your-key-here \
+  ghcr.io/theirishbrian/haven:latest
+```
+
+Use `-e OPENAI_API_KEY=...` instead, or both, for OpenAI. On Windows PowerShell, put it all on one line and drop the `\` characters. To keep keys out of your command history, put them in a file called `.env` and use `--env-file .env` instead of `-e`.
+
+The image works on Intel and AMD machines and on ARM (Apple Silicon Macs, Snapdragon PCs). Pin a version with `:0.1.0` instead of `:latest` if you want updates to happen only when you choose.
+
+## Building it yourself with Docker
+
+Use this if you want to change the code. You still don't need Python installed.
 
 1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and start it.
 2. Download Haven and add your keys:
@@ -128,6 +143,10 @@ Every request adds one row to a local SQLite file (`haven_audit.db`): the time, 
 
 - `GET /haven/audit` shows the latest rows as JSON
 - `GET /haven/audit.csv` downloads the whole log
+
+## Releases
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ## Roadmap
 

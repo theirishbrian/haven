@@ -1,6 +1,6 @@
 [project]
 name = "haven"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Local proxy that strips PHI and PII from AI prompts before they leave your machine."
 readme = "README.md"
 license = { text = "MIT" }

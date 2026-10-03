@@ -27,3 +27,13 @@ def test_health() -> None:
     response = TestClient(app).get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_version_matches_pyproject() -> None:
+    import tomllib
+    from pathlib import Path
+
+    from app import __version__
+
+    pyproject = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text())
+    assert pyproject["project"]["version"] == __version__
