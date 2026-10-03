@@ -16,10 +16,26 @@ Haven uses [Microsoft Presidio](https://github.com/microsoft/presidio) and the s
 | Specific dates (DOB, appointment dates) | Medical licence (DEA) numbers | IBANs |
 | Phone numbers (US, UK, IE and others) | Driver's licence and passport numbers | UK NHS numbers |
 | Email addresses, URLs, IP addresses | ITINs and bank account numbers | Eircodes and UK postcodes |
-| Street addresses and places | ZIP codes | |
-| Medical record and patient ID numbers | | |
+| Street addresses and places | ZIP codes | Irish counties, towns, Dublin suburbs and postal districts |
+| Medical record and patient ID numbers | | Irish names with fadas and particles (Ní Bhriain, Mac an tSaoir) |
 
 Turn packs on or off with `HAVEN_REGIONS=us,eu`.
+
+Names are caught four ways: spaCy's model, a list of common first names, the words around them ("Client:", "Dear", "Nurse"), and a final pass that removes every other mention of a name already found. When a note says "Mark Byrne" and later just "Mark", both become `[PERSON_1]`, so the AI knows they're the same person.
+
+## How accurate it is
+
+We test Haven on 660 fictional clinical notes in 11 styles: session notes, intake forms, referral letters, US and UK records, invoices, emails between colleagues and more. Full results are in [benchmark/RESULTS.md](benchmark/RESULTS.md).
+
+| | Haven | Presidio on its own |
+|---|---|---|
+| Identifiers removed | 100% (2,354 of 2,354) | 80% |
+| Names Haven has never seen | 100% (110 of 110) | 75% |
+| Clinical phrases left intact | 99.9% | 72% |
+
+Two cautions. The notes were written by the same person who wrote the recognisers, so these are best-case numbers and real notes will be messier. And Haven is weak on names typed entirely in lower case ("saw siobhan today"): it catches them completely in about two notes out of three.
+
+Run it yourself with `python -m benchmark.run`. The build fails if any of these figures drop.
 
 ## What it deliberately leaves alone
 
@@ -27,7 +43,8 @@ The AI still needs clinical context to be useful, so Haven keeps:
 
 - durations and frequencies ("three weeks", "twice daily", "8am")
 - a year on its own ("diagnosed in 2019"), which HIPAA Safe Harbor allows
-- medication names, doses and scores ("sertraline 50mg", "PHQ-9 of 14")
+- medication names, doses and scores ("sertraline 50mg", "PHQ-9 of 14", "Vitamin D3")
+- common clinical abbreviations such as GP, CBT, HSE and NICE, which the language model sometimes mistakes for names
 
 ## What it can't promise
 
@@ -122,7 +139,8 @@ Every request adds one row to a local SQLite file (`haven_audit.db`): the time, 
 - [ ] Tested against a live OpenAI account
 - [ ] Word-by-word streaming
 - [x] Docker image
-- [ ] Published accuracy figures on a synthetic test set
+- [x] Published accuracy figures on a synthetic test set
+- [ ] Better handling of names typed in lower case
 
 ## Licence
 

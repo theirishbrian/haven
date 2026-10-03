@@ -1,0 +1,23 @@
+# First names that are also everyday English words. These only count as a name
+# when followed by a capitalised surname ("Grace Hill"), never on their own.
+April
+Autumn
+Bill
+Dawn
+Faith
+Grace
+Hope
+Iris
+Ivy
+Joy
+June
+Mark
+Max
+May
+Faye
+Pat
+Rich
+Rose
+Ruby
+Summer
+Will

@@ -1,0 +1,33 @@
+# Clinical terms that spaCy sometimes mistakes for people or places.
+# Haven never scrubs these, on top of any HAVEN_ALLOW_LIST you set.
+PHQ-9
+PHQ-2
+PHQ
+GAD-7
+GAD-2
+GAD
+HbA1c
+BMI
+CBT
+DBT
+EMDR
+ACT
+IPT
+CORE-10
+CORE-OM
+K10
+AUDIT-C
+EPDS
+MUST
+MMSE
+MoCA
+ADHD
+ASD
+OCD
+PTSD
+CPTSD
+GP
+HSE
+NHS
+NICE
+CAMHS

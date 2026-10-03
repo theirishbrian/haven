@@ -176,3 +176,75 @@ def test_scrubbing_makes_no_network_calls(sanitiser: Sanitiser, monkeypatch: pyt
     monkeypatch.setattr(socket.socket, "connect", refuse)
     scrubbed, _ = scrub(sanitiser, "Email jane.doe@hospital.ie or visit https://example.org/patient/123")
     assert "jane.doe@hospital.ie" not in scrubbed
+
+
+# --- Irish places, names and repeat mentions --------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "secret"),
+    [
+        ("Lives in Dublin 6, near the park.", "Dublin 6"),
+        ("Moved from Co. Kerry last year.", "Kerry"),
+        ("Originally from Cork, now in Swords.", "Cork"),
+        ("Originally from Cork, now in Swords.", "Swords"),
+        ("Address: Apartment 4, Bray.", "Apartment 4"),
+        ("Seen with Siobhán Ní Bhriain today.", "Bhriain"),
+        ("Referred by Nurse Ó Súilleabháin.", "Súilleabháin"),
+        ("Letter from Prof. Mac an tSaoir.", "tSaoir"),
+        ("Hi Walsh,\nThanks for the update.", "Walsh"),
+        ("Dietetic review for Ailbhe Moriarty on Tuesday.", "Moriarty"),
+        ("Call (793) 329-6832 after 5pm.", "329-6832"),
+        ("DOB 7 June 1954.", "7 June 1954"),
+    ],
+)
+def test_irish_and_contextual_identifiers(sanitiser: Sanitiser, text: str, secret: str) -> None:
+    scrubbed, _ = scrub(sanitiser, text)
+    assert secret not in scrubbed, scrubbed
+
+
+def test_later_mentions_of_a_name_are_removed(sanitiser: Sanitiser) -> None:
+    scrubbed, _ = scrub(sanitiser, "Client: Siobhán Kavanagh. Later Kavanagh said Siobhán slept badly.")
+    assert "Kavanagh" not in scrubbed
+    assert "Siobhán" not in scrubbed
+
+
+def test_short_mention_shares_the_full_names_token(sanitiser: Sanitiser) -> None:
+    scrubbed, tm = scrub(sanitiser, "Mark Byrne attended. Mark reported poor sleep.")
+    assert scrubbed == "[PERSON_1] attended. [PERSON_1] reported poor sleep."
+    assert restore(scrubbed, tm) == "Mark Byrne attended. Mark Byrne reported poor sleep."
+
+
+def test_shared_surname_is_not_guessed(sanitiser: Sanitiser) -> None:
+    scrubbed, _ = scrub(sanitiser, "Mark Byrne and Aoife Byrne attended. Byrne family history noted.")
+    assert "[PERSON_3] family history" in scrubbed
+
+
+def test_names_known_from_earlier_messages(sanitiser: Sanitiser) -> None:
+    tm = TokenMap()
+    sanitiser.scrub("Client: Ailbhe Moriarty, first session.", tm)
+    second = sanitiser.scrub("Ailbhe says sleep is better.", tm).text
+    assert second == "[PERSON_1] says sleep is better."
+
+
+def test_overlapping_matches_are_merged_not_dropped(sanitiser: Sanitiser) -> None:
+    # "Ennis" is a town and a surname. Neither half of the name may survive.
+    scrubbed, _ = scrub(sanitiser, "Seen with Mary Ennis today.")
+    assert "Mary" not in scrubbed
+    assert "Ennis" not in scrubbed
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Will review in two weeks. Mark the chart for follow up.",
+        "Presents with low mood, GAD-7 of 11 and PHQ-9 score of 14.",
+        "Started Vitamin D3 1000 IU daily.",
+        "Referred for Cognitive Behavioural Therapy.",
+        "Grace period for the appointment is ten minutes.",
+        "Patient reports a flare of Crohn's Disease since last Monday.",
+    ],
+)
+def test_clinical_language_is_left_alone(sanitiser: Sanitiser, text: str) -> None:
+    scrubbed, _ = scrub(sanitiser, text)
+    assert scrubbed == text

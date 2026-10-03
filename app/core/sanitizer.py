@@ -21,9 +21,21 @@ from presidio_analyzer.predefined_recognizers import PhoneRecognizer
 from app.core.offline import force_offline
 from app.core.recognizers import (
     IePpsnRecognizer,
+    cued_name_recognizer,
+    date_recognizer,
+    first_name_recognizer,
+    greeting_recognizer,
+    ie_district_recognizer,
+    ie_place_recognizer,
+    irish_surname_recognizer,
+    lenient_phone_recognizer,
+    load_place_list,
     medical_record_recognizer,
+    name_parts,
     postcode_recognizer,
     street_address_recognizer,
+    titled_name_recognizer,
+    unit_number_recognizer,
     us_zip_recognizer,
 )
 
@@ -107,6 +119,38 @@ def is_identifying_date(text: str) -> bool:
     return bool(_SPECIFIC_DATE.search(text))
 
 
+_WORD_NAMES = set(load_place_list("first_names_ambiguous.txt"))
+
+
+def _is_word_used_as_word(text: str, r: RecognizerResult) -> bool:
+    """True for "Mark the chart" or "Will review": a word-like name alone, followed by a lower-case word."""
+    if r.entity_type != "PERSON" or text[r.start : r.end] not in _WORD_NAMES:
+        return False
+    following = text[r.end : r.end + 20].lstrip(" \t")
+    return bool(following) and following[0].islower()
+
+
+def merge_overlaps(results: list[RecognizerResult]) -> list[RecognizerResult]:
+    """Combine overlapping matches into one span covering all of them.
+
+    Dropping the weaker of two overlapping matches can leak text: if "Ennis"
+    (a town) beat "Mary Ennis" (a person), "Mary" would get through. Merging
+    removes the union instead. The label comes from the most confident match,
+    then the longest.
+    """
+    merged: list[RecognizerResult] = []
+    for r in sorted(results, key=lambda r: (r.start, -r.end)):
+        if merged and r.start < merged[-1].end:
+            current = merged[-1]
+            best = max((current, r), key=lambda x: (x.score, x.end - x.start))
+            merged[-1] = RecognizerResult(
+                best.entity_type, current.start, max(current.end, r.end), max(current.score, r.score)
+            )
+        else:
+            merged.append(r)
+    return merged
+
+
 @dataclass
 class TokenMap:
     """Original values for each token, for one request only."""
@@ -123,6 +167,33 @@ class TokenMap:
             self._by_value[key] = token
             self._by_token[token] = value
         return self._by_value[key]
+
+    def person_token(self, value: str) -> str:
+        """Token for a person, shared with a fuller name already seen.
+
+        "Mark" after "Mark Byrne" gets Mark Byrne's token, so the AI knows it is
+        the same person. If the short name fits more than one known person
+        (two Byrnes), it gets its own token rather than a guess.
+        """
+        key = ("PERSON", " ".join(value.split()).casefold())
+        if key in self._by_value:
+            return self._by_value[key]
+        parts = set(name_parts(value))
+        if parts:
+            matches = {
+                token
+                for token, original in self._by_token.items()
+                if token.startswith("[PERSON_") and parts < set(name_parts(original))
+            }
+            if len(matches) == 1:
+                token = matches.pop()
+                self._by_value[key] = token
+                return token
+        return self.token_for("PERSON", value)
+
+    def values(self, label: str) -> list[str]:
+        """Original values for one label, e.g. every PERSON seen so far."""
+        return [v for t, v in self._by_token.items() if t.startswith(f"[{label}_")]
 
     def original(self, token: str) -> str | None:
         return self._by_token.get(token)
@@ -154,12 +225,12 @@ class Sanitiser:
     ) -> None:
         self.regions = list(regions)
         self.score_threshold = score_threshold
-        self.allow_list = list(allow_list)
+        self.allow_list = [*load_place_list("clinical_terms.txt"), *allow_list]
         self.entities = COMMON_ENTITIES + [e for r in self.regions for e in REGION_ENTITIES[r]]
-        self.analyzer = self._build_analyzer(spacy_model)
+        self.analyzer = self._build_analyzer(spacy_model, self.regions)
 
     @staticmethod
-    def _build_analyzer(spacy_model: str) -> AnalyzerEngine:
+    def _build_analyzer(spacy_model: str, regions: list[str]) -> AnalyzerEngine:
         force_offline()
         nlp_engine = NlpEngineProvider(
             nlp_configuration={
@@ -177,10 +248,25 @@ class Sanitiser:
         registry.add_recognizer(street_address_recognizer())
         registry.add_recognizer(postcode_recognizer())
         registry.add_recognizer(us_zip_recognizer())
+        registry.add_recognizer(unit_number_recognizer())
+        registry.add_recognizer(first_name_recognizer())
+        registry.add_recognizer(titled_name_recognizer())
+        registry.add_recognizer(irish_surname_recognizer())
+        registry.add_recognizer(greeting_recognizer())
+        registry.add_recognizer(cued_name_recognizer())
+        registry.add_recognizer(date_recognizer())
+        registry.add_recognizer(lenient_phone_recognizer())
+        if "eu" in regions:
+            registry.add_recognizer(ie_place_recognizer())
+            registry.add_recognizer(ie_district_recognizer())
         return AnalyzerEngine(registry=registry, nlp_engine=nlp_engine)
 
-    def find(self, text: str) -> list[RecognizerResult]:
-        """Return non-overlapping matches, sorted by position."""
+    def find(self, text: str, known_names: Iterable[str] = ()) -> list[RecognizerResult]:
+        """Return non-overlapping matches, sorted by position.
+
+        known_names are people already found earlier in the same request. Any
+        word from their names is removed wherever else it appears.
+        """
         results = self.analyzer.analyze(
             text=text,
             language="en",
@@ -189,15 +275,30 @@ class Sanitiser:
             allow_list=self.allow_list or None,
         )
         results = [
-            r for r in results if r.entity_type != "DATE_TIME" or is_identifying_date(text[r.start : r.end])
+            r
+            for r in results
+            if (r.entity_type != "DATE_TIME" or is_identifying_date(text[r.start : r.end]))
+            and not _is_word_used_as_word(text, r)
         ]
-        # Prefer the most confident match, then the longest, when spans overlap.
-        results.sort(key=lambda r: (-r.score, -(r.end - r.start)))
-        kept: list[RecognizerResult] = []
-        for r in results:
-            if all(r.end <= k.start or r.start >= k.end for k in kept):
-                kept.append(r)
-        return sorted(kept, key=lambda r: r.start)
+        results = merge_overlaps(results)
+        return merge_overlaps(results + self._other_mentions(text, results, known_names))
+
+    @staticmethod
+    def _other_mentions(
+        text: str, results: list[RecognizerResult], known_names: Iterable[str]
+    ) -> list[RecognizerResult]:
+        """Find every other mention of a name already detected.
+
+        A note might give "Siobhán Kavanagh" once and then just "Kavanagh" or
+        "Siobhán". The model may only catch the first, so search for the parts.
+        """
+        names = [text[r.start : r.end] for r in results if r.entity_type == "PERSON"]
+        parts = {part for name in [*names, *known_names] for part in name_parts(name)}
+        if not parts:
+            return []
+        alternation = "|".join(re.escape(p) for p in sorted(parts, key=len, reverse=True))
+        pattern = re.compile(rf"(?<![\w'’-])(?:{alternation})(?![\w'’-])")
+        return [RecognizerResult("PERSON", m.start(), m.end(), 0.6) for m in pattern.finditer(text)]
 
     def scrub(self, text: str, token_map: TokenMap) -> ScrubResult:
         """Replace identifiers in text with tokens, adding them to token_map.
@@ -208,10 +309,18 @@ class Sanitiser:
         counts: Counter[str] = Counter()
         parts: list[str] = []
         cursor = 0
-        for r in self.find(text):
+        found = self.find(text, known_names=token_map.values("PERSON"))
+        # Register full names before short ones so "Mark" can share "Mark Byrne"'s token.
+        people = list(dict.fromkeys(text[r.start : r.end] for r in found if r.entity_type == "PERSON"))
+        for name in sorted(people, key=lambda n: -len(name_parts(n))):  # stable: ties keep text order
+            token_map.person_token(name)
+        for r in found:
             label = TOKEN_LABELS.get(r.entity_type, r.entity_type)
+            value = text[r.start : r.end]
             parts.append(text[cursor : r.start])
-            parts.append(token_map.token_for(label, text[r.start : r.end]))
+            parts.append(
+                token_map.person_token(value) if label == "PERSON" else token_map.token_for(label, value)
+            )
             counts[label] += 1
             cursor = r.end
         parts.append(text[cursor:])
